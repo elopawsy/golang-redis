@@ -1,0 +1,15 @@
+# Données de persistance générées à l'exécution
+/data/
+
+# Configuration locale (ne jamais committer)
+.env
+
+# Binaires
+/wasmredis
+*.wasm
+
+# Interface React
+/web/node_modules/
+/web/dist/
+/web/test-results/
+/web/playwright-report/
