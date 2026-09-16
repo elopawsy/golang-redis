@@ -14,7 +14,7 @@ var (
 )
 
 func NewQueues() *Queues {
-	return &Queues{queues: make(map[string][]Task)}
+	return &Queues{queues: make(map[string]*queue)}
 }
 
 func (q *Queues) Create(name string) error {
@@ -26,7 +26,10 @@ func (q *Queues) Create(name string) error {
 	if _, exists := q.queues[name]; exists {
 		return fmt.Errorf("%w : cette file existe déjà", ErrConflict)
 	}
-	q.queues[name] = []Task{}
+	q.queues[name] = &queue{
+		tasks:  []Task{},
+		counts: map[string]int{Pending: 0, Running: 0, Completed: 0, Failed: 0},
+	}
 	return nil
 }
 
@@ -34,12 +37,12 @@ func (q *Queues) List() []QueueSummary {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	result := make([]QueueSummary, 0, len(q.queues))
-	for name, tasks := range q.queues {
-		counts := map[string]int{Pending: 0, Running: 0, Completed: 0, Failed: 0}
-		for _, task := range tasks {
-			counts[task.Status]++
+	for name, entry := range q.queues {
+		counts := make(map[string]int, len(entry.counts))
+		for status, total := range entry.counts {
+			counts[status] = total
 		}
-		result = append(result, QueueSummary{Name: name, Total: len(tasks), Counts: counts})
+		result = append(result, QueueSummary{Name: name, Total: len(entry.tasks), Counts: counts})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
@@ -51,12 +54,14 @@ func (q *Queues) Add(name, payload string) (Task, error) {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if _, exists := q.queues[name]; !exists {
+	entry, exists := q.queues[name]
+	if !exists {
 		return Task{}, ErrNotFound
 	}
 	q.nextID++
 	task := Task{ID: q.nextID, Payload: payload, Status: Pending, CreatedAt: time.Now()}
-	q.queues[name] = append(q.queues[name], task)
+	entry.tasks = append(entry.tasks, task)
+	entry.counts[Pending]++
 	return task, nil
 }
 
@@ -70,19 +75,31 @@ func (q *Queues) Page(name, status string, offset, limit int) (TaskPage, error) 
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	tasks, exists := q.queues[name]
+	entry, exists := q.queues[name]
 	if !exists {
 		return TaskPage{}, ErrNotFound
 	}
 	page := TaskPage{Items: []Task{}, Offset: offset}
-	for _, task := range tasks {
-		if status != "" && task.Status != status {
+	if status == "" {
+		page.Total = len(entry.tasks)
+		for i := offset; i < len(entry.tasks) && len(page.Items) < limit; i++ {
+			page.Items = append(page.Items, entry.tasks[i])
+		}
+		return page, nil
+	}
+	page.Total = entry.counts[status]
+	seen := 0
+	for _, task := range entry.tasks {
+		if task.Status != status {
 			continue
 		}
-		if page.Total >= offset && len(page.Items) < limit {
+		if seen >= offset {
 			page.Items = append(page.Items, task)
 		}
-		page.Total++
+		seen++
+		if len(page.Items) == limit {
+			break
+		}
 	}
 	return page, nil
 }
@@ -90,14 +107,16 @@ func (q *Queues) Page(name, status string, offset, limit int) (TaskPage, error) 
 func (q *Queues) Claim(name string) (Task, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	tasks, exists := q.queues[name]
+	entry, exists := q.queues[name]
 	if !exists {
 		return Task{}, ErrNotFound
 	}
-	for i := range tasks {
-		if tasks[i].Status == Pending {
-			tasks[i].Status = Running
-			return tasks[i], nil
+	for i := range entry.tasks {
+		if entry.tasks[i].Status == Pending {
+			entry.tasks[i].Status = Running
+			entry.counts[Pending]--
+			entry.counts[Running]++
+			return entry.tasks[i], nil
 		}
 	}
 	return Task{}, fmt.Errorf("%w : aucune tâche en attente", ErrConflict)
@@ -109,20 +128,22 @@ func (q *Queues) Update(name string, id int, status string) (Task, error) {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	tasks, exists := q.queues[name]
+	entry, exists := q.queues[name]
 	if !exists {
 		return Task{}, ErrNotFound
 	}
-	for i := range tasks {
-		if tasks[i].ID != id {
+	for i := range entry.tasks {
+		if entry.tasks[i].ID != id {
 			continue
 		}
-		current := tasks[i].Status
+		current := entry.tasks[i].Status
 		if !(current == Running && (status == Completed || status == Failed) || current == Failed && status == Pending) {
 			return Task{}, ErrConflict
 		}
-		tasks[i].Status = status
-		return tasks[i], nil
+		entry.tasks[i].Status = status
+		entry.counts[current]--
+		entry.counts[status]++
+		return entry.tasks[i], nil
 	}
 	return Task{}, ErrNotFound
 }

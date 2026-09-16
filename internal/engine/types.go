@@ -44,8 +44,13 @@ type Task struct {
 
 type Queues struct {
 	mu     sync.Mutex
-	queues map[string][]Task
+	queues map[string]*queue
 	nextID int
+}
+
+type queue struct {
+	tasks  []Task
+	counts map[string]int
 }
 
 type QueueSummary struct {

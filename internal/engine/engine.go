@@ -44,6 +44,18 @@ func NewMemory(cfg config.Config) (*Engine, error) {
 	return e, nil
 }
 
+func (e *Engine) Len() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.state)
+}
+
+func (e *Engine) Buffered() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.buffer)
+}
+
 func (e *Engine) Set(key, value string, ttl time.Duration) error {
 	return e.set(key, value, false, ttl)
 }

@@ -11,12 +11,15 @@ import (
 	"wasmredis/internal/engine"
 )
 
-func runServer(ctx context.Context, addr string, demo bool, eng *engine.Engine) error {
+func runServer(ctx context.Context, addr string, demo bool, demoTasks int, eng *engine.Engine) error {
 	queues := engine.NewQueues()
 	if demo {
-		if err := seedDemo(queues); err != nil {
+		started := time.Now()
+		if err := seedDemo(queues, demoTasks); err != nil {
 			return err
 		}
+		log.Printf("démonstration : 3 files de %d tâche%s créées en %s",
+			demoTasks, plural(demoTasks), time.Since(started).Round(time.Millisecond))
 	}
 	server := &http.Server{
 		Addr: addr, Handler: api.New(queues, eng),
@@ -33,6 +36,7 @@ func runServer(ctx context.Context, addr string, demo bool, eng *engine.Engine) 
 		}
 		return err
 	case <-ctx.Done():
+		log.Print("fermeture du serveur HTTP")
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		err := server.Shutdown(shutdown)
@@ -43,21 +47,26 @@ func runServer(ctx context.Context, addr string, demo bool, eng *engine.Engine) 
 		if !errors.Is(serveErr, http.ErrServerClosed) {
 			err = errors.Join(err, serveErr)
 		}
+		log.Print("serveur HTTP arrêté")
 		return err
 	}
 }
 
-func seedDemo(q *engine.Queues) error {
+func seedDemo(q *engine.Queues, tasks int) error {
 	for _, name := range []string{"emails", "images", "exports"} {
 		if err := q.Create(name); err != nil {
 			return err
 		}
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < tasks; i++ {
 			if _, err := q.Add(name, fmt.Sprintf("Tâche %s %04d", name, i+1)); err != nil {
 				return err
 			}
 		}
-		for i := 0; i < 30; i++ {
+		claims := 30
+		if claims > tasks {
+			claims = tasks
+		}
+		for i := 0; i < claims; i++ {
 			task, err := q.Claim(name)
 			if err != nil {
 				return err

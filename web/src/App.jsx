@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { request, statuses, usePolling } from "./api";
 import TaskList from "./TaskList";
+import {
+  alert,
+  button,
+  dot,
+  input,
+  primaryButton,
+  select,
+  statusDot,
+} from "./ui";
 
 const count = new Intl.NumberFormat("fr-FR");
 
@@ -16,7 +25,6 @@ export default function App() {
   );
   const active =
     queues?.find((queue) => queue.name === selected) || queues?.[0];
-  const total = queues?.reduce((sum, queue) => sum + queue.total, 0) || 0;
 
   async function mutate(path, method, body) {
     setBusy(true);
@@ -49,124 +57,98 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <a className="brand" href="/" aria-label="WasmRedis, accueil">
-          <span className="brand-icon">W</span> WasmRedis
-          <span className="version">GO</span>
+    <div className="flex min-h-screen max-narrow:block">
+      <aside className="flex w-[220px] shrink-0 flex-col border-r border-line px-5 py-6 max-narrow:w-auto max-narrow:gap-3 max-narrow:border-r-0 max-narrow:border-b max-narrow:px-4 max-narrow:py-3">
+        <a href="/" className="text-md font-semibold text-ink">
+          WasmRedis
         </a>
-        <div className="workspace">
-          <span className="workspace-icon">L</span>
-          <div>
-            Mon espace local<small>Moteur en mémoire</small>
-          </div>
-        </div>
-        <div className="section-label">
-          EXPLORATEUR <span>{queues?.length || 0}</span>
-        </div>
-        <h2 className="sidebar-title">Files d’attente</h2>
-        <nav aria-label="Files d’attente">
+        <nav
+          aria-label="Files d’attente"
+          className="mt-6 flex flex-col gap-0.5 max-narrow:mt-0 max-narrow:flex-row max-narrow:overflow-x-auto"
+        >
           {queues?.map((queue) => (
             <button
               key={queue.name}
-              className={`queue-link ${active?.name === queue.name ? "active" : ""}`}
+              className={`flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-md motion-safe:transition-colors max-narrow:w-auto max-narrow:shrink-0 ${
+                active?.name === queue.name
+                  ? "bg-active text-ink"
+                  : "text-muted hover:bg-hover"
+              }`}
               onClick={() => setSelected(queue.name)}
               aria-current={active?.name === queue.name ? "page" : undefined}
             >
-              <span className="queue-icon" aria-hidden="true">
-                ≡
+              <span className="truncate">{queue.name}</span>
+              <span className="ml-auto text-2xs text-faint max-narrow:ml-1">
+                {count.format(queue.total)}
               </span>
-              <span>{queue.name}</span>
-              <span className="queue-count">{count.format(queue.total)}</span>
             </button>
           ))}
-          {queues?.length === 0 ? (
-            <p className="muted">Aucune file pour le moment.</p>
-          ) : null}
         </nav>
-        <form className="queue-form" onSubmit={createQueue}>
-          <label htmlFor="queue-name">Nouvelle file</label>
-          <div className="input-row">
+        <form className="mt-6 max-narrow:mt-0" onSubmit={createQueue}>
+          <label
+            htmlFor="queue-name"
+            className="mb-1.5 block text-2xs text-faint"
+          >
+            Nouvelle file
+          </label>
+          <div className="flex gap-1.5">
             <input
               id="queue-name"
               name="name"
+              className={`${input} w-full max-narrow:max-w-[240px]`}
               placeholder="ex. notifications"
               pattern="[A-Za-z0-9_\x2D]+"
               maxLength={64}
               required
               autoComplete="off"
             />
-            <button disabled={busy} aria-label="Créer la file">
+            <button
+              className={button}
+              disabled={busy}
+              aria-label="Créer la file"
+            >
               +
             </button>
           </div>
         </form>
-        <div className="sidebar-bottom">
-          <span className={`dot ${connectionError ? "offline" : ""}`} />
-          {connectionError
-            ? "Connexion interrompue"
-            : queues
-              ? "API connectée"
-              : "Connexion…"}
-          <small>Actualisation toutes les 2 secondes</small>
-        </div>
       </aside>
-      <main>
-        <header className="topbar">
-          <span>
-            Espace local <span className="breadcrumb">/</span> Files d’attente
-          </span>
-          <span className="memory-tag">En mémoire</span>
-        </header>
-        <div className="content">
-          <div className="page-heading">
-            <div>
-              <p className="eyebrow">TABLEAU DE BORD</p>
-              <h1>Files d’attente</h1>
-              <p className="muted">
-                Suivez vos tâches, de leur création à leur résultat.
-              </p>
-            </div>
-            <span className="total-tag">
-              {count.format(total)} tâches au total
-            </span>
+      <main className="mx-auto w-full max-w-[1040px] min-w-0 flex-1 px-8 py-8 max-narrow:px-4 max-narrow:py-6">
+        {connectionError || error ? (
+          <div role="alert" className={alert}>
+            {connectionError
+              ? `API indisponible : ${connectionError}. Nouvelle tentative automatique.`
+              : error}
           </div>
-          <div className="memory-note">
-            <span aria-hidden="true">ⓘ</span> Les données sont temporaires :
-            elles disparaissent au redémarrage du serveur.
-          </div>
-          {connectionError || error ? (
-            <div role="alert" className="error">
-              {connectionError
-                ? `API indisponible : ${connectionError}. Nouvelle tentative automatique.`
-                : error}
-            </div>
-          ) : null}
-          <div className="sr-only" role="status">
-            {notice}
-          </div>
-          {!queues && !connectionError ? (
-            <p role="status">Chargement des files…</p>
-          ) : null}
-          {active ? (
-            <QueueView
-              key={active.name}
-              queue={active}
-              revision={revision}
-              busy={busy}
-              mutate={mutate}
-            />
-          ) : queues ? (
-            <section className="empty-state">
-              <span className="empty-icon">≡</span>
-              <h2>Votre première file vous attend</h2>
-              <p>Créez une file dans le menu, puis ajoutez une tâche.</p>
-            </section>
-          ) : null}
-          <footer>
-            WasmRedis <span>Go + React · Projet d’apprentissage</span>
-          </footer>
+        ) : null}
+        <div className="sr-only" role="status">
+          {notice}
         </div>
+        {!queues && !connectionError ? (
+          <p role="status" className="text-md text-muted">
+            Chargement des files…
+          </p>
+        ) : null}
+        {active ? (
+          <QueueView
+            key={active.name}
+            queue={active}
+            revision={revision}
+            busy={busy}
+            mutate={mutate}
+          />
+        ) : queues ? (
+          <>
+            <h1 className="text-lg font-medium tracking-[-0.4px]">
+              Files d’attente
+            </h1>
+            <p className="mt-3 text-md text-muted">
+              Aucune file. Créez-en une dans le menu, puis ajoutez une tâche.
+            </p>
+          </>
+        ) : null}
+        <p className="mt-10 text-2xs text-faint">
+          Files en mémoire : elles disparaissent au redémarrage du serveur.
+        </p>
       </main>
     </div>
   );
@@ -182,93 +164,76 @@ function QueueView({ queue, revision, busy, mutate }) {
     if (await mutate(`${base}/tasks`, "POST", { payload })) form.reset();
   }
   return (
-    <>
-      <div className="stats">
+    <section aria-labelledby="queue-title">
+      <div className="flex items-center justify-between gap-4">
+        <h1
+          id="queue-title"
+          className="min-w-0 text-lg font-medium tracking-[-0.4px] [overflow-wrap:anywhere]"
+        >
+          {queue.name}
+        </h1>
+        <button
+          className={primaryButton}
+          disabled={busy || queue.counts.pending === 0}
+          onClick={() => mutate(`${base}/claim`, "POST")}
+        >
+          Démarrer la suivante
+        </button>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
         {Object.entries(statuses).map(([status, label]) => (
-          <button
-            key={status}
-            className={`stat-card ${status} ${filter === status ? "chosen" : ""}`}
-            onClick={() => setFilter(filter === status ? "" : status)}
-            aria-pressed={filter === status}
-          >
-            <span className="stat-label">
-              <span className="dot" />
-              {label}
-            </span>
-            <strong>{count.format(queue.counts[status])}</strong>
-            <span className="stat-hint">
-              Afficher les tâches <span aria-hidden="true">↗</span>
-            </span>
-          </button>
+          <span key={status} className="flex items-center gap-1.5">
+            <span className={`${dot} ${statusDot[status]}`} />
+            {count.format(queue.counts[status])} {label.toLowerCase()}
+          </span>
         ))}
       </div>
-      <section className="task-panel" aria-labelledby="queue-title">
-        <div className="panel-heading">
-          <div className="queue-title">
-            <span className="panel-icon" aria-hidden="true">
-              ≡
-            </span>
-            <div>
-              <h2 id="queue-title">{queue.name}</h2>
-              <p>{count.format(queue.total)} tâches · ordre d’arrivée</p>
-            </div>
-          </div>
-          <button
-            className="primary"
-            disabled={busy || queue.counts.pending === 0}
-            onClick={() => mutate(`${base}/claim`, "POST")}
-          >
-            ▶ Démarrer la suivante
-          </button>
-        </div>
-        <form className="task-form" onSubmit={addTask}>
-          <label className="sr-only" htmlFor="payload">
-            Contenu de la tâche
-          </label>
-          <input
-            id="payload"
-            name="payload"
-            required
-            maxLength={4096}
-            placeholder="Décrivez une nouvelle tâche…"
-            autoComplete="off"
-          />
-          <button className="secondary" disabled={busy}>
-            + Ajouter une tâche
-          </button>
-        </form>
-        <div className="list-toolbar">
-          <div>
-            <label htmlFor="status-filter">Statut</label>
-            <select
-              id="status-filter"
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-            >
-              <option value="">Tous les statuts</option>
-              {Object.entries(statuses).map(([status, label]) => (
-                <option key={status} value={status}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <span>Traitement manuel</span>
-        </div>
-        <TaskList
-          key={filter}
-          base={base}
-          filter={filter}
-          revision={revision}
-          busy={busy}
-          mutate={mutate}
+      <form className="mt-6 flex gap-2 max-narrow:flex-wrap" onSubmit={addTask}>
+        <label className="sr-only" htmlFor="payload">
+          Contenu de la tâche
+        </label>
+        <input
+          id="payload"
+          name="payload"
+          className={`${input} flex-1 max-narrow:basis-full`}
+          required
+          maxLength={4096}
+          placeholder="Nouvelle tâche…"
+          autoComplete="off"
         />
-      </section>
-      <p className="help-text">
-        « Démarrer la suivante » prend la première tâche en attente. Une tâche
-        en erreur peut être remise en attente. Aucun programme n’exécute
-        automatiquement son contenu.
-      </p>
-    </>
+        <button className={button} disabled={busy}>
+          + Ajouter une tâche
+        </button>
+      </form>
+      <div className="mt-6 flex items-center justify-between gap-3 text-xs text-muted">
+        <div className="flex items-center gap-2">
+          <label htmlFor="status-filter">Statut</label>
+          <select
+            id="status-filter"
+            className={select}
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+          >
+            <option value="">Tous les statuts</option>
+            {Object.entries(statuses).map(([status, label]) => (
+              <option key={status} value={status}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <span>
+          {count.format(filter ? queue.counts[filter] : queue.total)} tâches
+        </span>
+      </div>
+      <TaskList
+        key={filter}
+        base={base}
+        filter={filter}
+        revision={revision}
+        busy={busy}
+        mutate={mutate}
+      />
+    </section>
   );
 }
